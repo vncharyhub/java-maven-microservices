@@ -2,36 +2,58 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "product-service"
-        DOCKER_TAG = "latest"
-        REGISTRY_CREDENTIALS = 'dockerhub-creds'
+        DOCKER_HUB_CREDENTIALS = credentials('dockerhub-creds')
+        DOCKER_HUB_USER = "${DOCKER_HUB_CREDENTIALS_USR}"
+        VERSION = "v1"
+    }
+
+    parameters {
+        choice(name: 'SERVICE_NAME', choices: ['product-service', 'order-service', 'api-gateway', 'discovery-server'], description: 'Select the microservice to build and push')
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/vncharyhub/java-maven-microservices'
+                checkout scm
             }
         }
 
-        stage('Build') {
+        stage('Build with Maven') {
             steps {
-                dir('product-service') {
+                dir("${params.SERVICE_NAME}") {
                     sh 'mvn clean package -DskipTests'
                 }
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Build Docker Image') {
             steps {
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', REGISTRY_CREDENTIALS) {
-                        def image = docker.build("${DOCKER_IMAGE}:${DOCKER_TAG}", "product-service")
-                        image.push()
+                dir("${params.SERVICE_NAME}") {
+                    script {
+                        def imageName = "${DOCKER_HUB_USER}/${params.SERVICE_NAME}:${VERSION}"
+                        sh "docker build -t ${imageName} ."
                     }
                 }
             }
         }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    def imageName = "${DOCKER_HUB_USER}/${params.SERVICE_NAME}:${VERSION}"
+                    sh "echo ${DOCKER_HUB_CREDENTIALS_PSW} | docker login -u ${DOCKER_HUB_CREDENTIALS_USR} --password-stdin"
+                    sh "docker push ${imageName}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Successfully built and pushed Docker image for ${params.SERVICE_NAME}:${VERSION}"
+        }
+        failure {
+            echo "❌ Build failed for ${params.SERVICE_NAME}"
+        }
     }
 }
-
