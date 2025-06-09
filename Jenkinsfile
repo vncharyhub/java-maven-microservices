@@ -1,5 +1,7 @@
 pipeline {
-  agent any
+  agent {
+    label 'java-maven-ubuntu-agent'  // Replace with your actual agent node label
+  }
 
   environment {
     AWS = credentials('aws-creds') // contains AWS_USR and AWS_PSW
