@@ -21,17 +21,28 @@ pipeline {
         AWS_SECRET_ACCESS_KEY = "${AWS_PSW}"
       }
       steps {
-        sh 'aws s3 cp ${PEM_S3} ./jenkins.pem && chmod 600 jenkins.pem'
+        script {
+          // Download PEM file
+          sh 'aws s3 cp ${PEM_S3} ./jenkins.pem && chmod 600 jenkins.pem'
 
-        dir('terraform') {
-          sh 'terraform init'
-          sh 'terraform apply -auto-approve'
+          // Get IAM User ARN from current credentials
+          def jenkinsArn = sh(script: "aws iam get-user --query 'User.Arn' --output text", returnStdout: true).trim()
+          echo "Extracted IAM User ARN: ${jenkinsArn}"
 
-          sh '''
-            aws eks update-kubeconfig \
-              --name $(terraform output -raw cluster_name) \
-              --region us-east-1
-          '''
+          // Run Terraform with the ARN passed as a variable
+          dir('terraform') {
+            sh 'terraform init'
+            sh """
+              terraform apply -auto-approve \
+                -var='jenkins_ssh_iam_user_arn=${jenkinsArn}'
+            """
+
+            sh '''
+              aws eks update-kubeconfig \
+                --name $(terraform output -raw cluster_name) \
+                --region us-east-1
+            '''
+          }
         }
       }
     }
